@@ -1,2 +1,2 @@
 bak :
-	git archive --format=tar.gz --prefix=CameraX/ --output ../CameraX.tar.gz master
+	git archive --format=tar.gz --prefix=Camera/ --output ../Camera.tar.gz master
