@@ -1,21 +1,27 @@
 package com.kaspersigi.camera;
 
 import android.Manifest;
+import android.content.ContentValues;
 import android.content.pm.PackageManager;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.MediaStore;
 import android.util.Log;
 import android.view.Surface;
 import android.view.TextureView;
 import android.widget.Toast;
 
+import android.net.Uri; // <-- 这里添加 Uri 导入
+
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 
 @SuppressWarnings("deprecation") // 使用 Camera API1
 public class MainActivity extends AppCompatActivity {
@@ -23,6 +29,7 @@ public class MainActivity extends AppCompatActivity {
 
     private TextureView mTextureView;
     private Camera mCamera;
+    private int cameraId = Camera.CameraInfo.CAMERA_FACING_BACK; // 默认后摄像头
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,7 +59,7 @@ public class MainActivity extends AppCompatActivity {
     private void openCamera() {
         if (mCamera == null) {
             try {
-                mCamera = Camera.open(); // 默认后摄
+                mCamera = Camera.open(cameraId); // 使用 cameraId 来打开不同的摄像头
                 setCameraDisplayOrientation();
                 showToast("Camera opened");
             } catch (Exception e) {
@@ -66,7 +73,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void setCameraDisplayOrientation() {
         Camera.CameraInfo info = new Camera.CameraInfo();
-        Camera.getCameraInfo(Camera.CameraInfo.CAMERA_FACING_BACK, info);
+        Camera.getCameraInfo(cameraId, info);
 
         int rotation = getWindowManager().getDefaultDisplay().getRotation();
         int degrees = 0;
@@ -131,14 +138,32 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        mCamera.takePicture(null, null, (data, camera) -> {
-            showToast("Picture taken, size = " + data.length + " bytes");
+        // 创建保存图片的文件
+        ContentValues values = new ContentValues();
+        values.put(MediaStore.Images.Media.TITLE, "Photo_" + System.currentTimeMillis());
+        values.put(MediaStore.Images.Media.DESCRIPTION, "Captured by Camera API1");
+        values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+        values.put(MediaStore.Images.Media.DATE_ADDED, System.currentTimeMillis());
+        Uri uri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+
+        Camera.PictureCallback pictureCallback = (data, camera) -> {
             try {
-                mCamera.startPreview(); // 拍完后恢复预览
-            } catch (Exception e) {
-                showToast("Failed to resume preview");
+                // 获取输出流并写入数据
+                OutputStream outputStream = getContentResolver().openOutputStream(uri);
+                outputStream.write(data);
+                outputStream.close();
+                showToast("Photo saved to gallery: " + uri.toString());
+
+                // 恢复预览
+                mCamera.startPreview();
+            } catch (IOException e) {
+                e.printStackTrace();
+                showToast("Failed to save photo to gallery");
             }
-        });
+        };
+
+        // 拍照并调用回调
+        mCamera.takePicture(null, null, pictureCallback);
     }
 
     private void stopPreview() {
