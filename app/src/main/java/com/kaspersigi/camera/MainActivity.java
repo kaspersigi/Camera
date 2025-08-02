@@ -1,5 +1,6 @@
 package com.kaspersigi.camera;
 
+import android.annotation.SuppressLint;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
 import android.Manifest;
@@ -24,10 +25,10 @@ import java.io.OutputStream;
 @SuppressWarnings("deprecation")
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "CameraDemo";
-
+    private static final int CAMERA_PERMISSION_REQUEST_CODE = 100; // 请求相机权限的常量
     private TextureView mTextureView;
     private Camera mCamera;
-    private int cameraId = Camera.CameraInfo.CAMERA_FACING_BACK;
+    private int mCameraId = Camera.CameraInfo.CAMERA_FACING_BACK; // 设置为后置摄像头
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -35,46 +36,48 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         mTextureView = findViewById(R.id.textureView);
 
-        findViewById(R.id.button1).setOnClickListener(v -> requestCameraPermission());
-        findViewById(R.id.button2).setOnClickListener(v -> openCamera());
-        findViewById(R.id.button3).setOnClickListener(v -> configureCameraParameters());
-        findViewById(R.id.button4).setOnClickListener(v -> startPreview());
-        findViewById(R.id.button5).setOnClickListener(v -> takePicture());
-        findViewById(R.id.button6).setOnClickListener(v -> stopPreview());
-        findViewById(R.id.button7).setOnClickListener(v -> releaseCamera());
-        findViewById(R.id.button8).setOnClickListener(v -> closeCamera());
+        findViewById(R.id.button1).setOnClickListener(v -> requestCameraPermission()); // 请求相机权限
+        findViewById(R.id.button2).setOnClickListener(v -> openCamera()); // 打开相机
+        findViewById(R.id.button3).setOnClickListener(v -> setDisplayOrientation()); // 设置相机显示方向
+        findViewById(R.id.button4).setOnClickListener(v -> configureParameters()); // 配置相机参数
+        findViewById(R.id.button5).setOnClickListener(v -> startPreview()); // 启动相机预览
+        findViewById(R.id.button6).setOnClickListener(v -> takePicture()); // 拍照
+        findViewById(R.id.button7).setOnClickListener(v -> stopPreview()); // 停止预览
+        findViewById(R.id.button8).setOnClickListener(v -> closeCamera()); // 关闭相机
     }
 
-    // 请求相机权限
     private void requestCameraPermission() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                 == PackageManager.PERMISSION_GRANTED) {
-            showToast("Camera permission granted");
+            showToast("Camera permission granted"); // 相机权限已授权
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, 100);
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST_CODE); // 请求权限
         }
     }
 
-    // 打开相机
+    @SuppressLint("DefaultLocale")
     private void openCamera() {
         if (mCamera == null) {
             try {
-                mCamera = Camera.open(cameraId);
-                setCameraDisplayOrientation();
-                showToast("Camera opened");
+                mCamera = Camera.open(mCameraId); // 打开相机
+                showToast(String.format("Camera: %d opened successfully", mCameraId)); // 成功打开相机
             } catch (Exception e) {
-                showToast("Camera open failed: " + e.getMessage());
+                showToast(String.format("Camera: %d open failed: %s", mCameraId, e.getMessage())); // 打开相机失败
                 e.printStackTrace();
             }
         } else {
-            showToast("Camera already opened");
+            showToast(String.format("Camera: %d already opened", mCameraId)); // 相机已打开
         }
     }
 
-    // 设置相机显示方向
-    private void setCameraDisplayOrientation() {
+    private void setDisplayOrientation() {
+        if (mCamera == null) {
+            showToast("Camera not opened");
+            return;
+        }
+
         Camera.CameraInfo info = new Camera.CameraInfo();
-        Camera.getCameraInfo(cameraId, info);
+        Camera.getCameraInfo(mCameraId, info);
 
         int rotation = getWindowManager().getDefaultDisplay().getRotation();
         int degrees = 0;
@@ -95,111 +98,116 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (mCamera != null) {
-            mCamera.setDisplayOrientation(result);
-            Log.i(TAG, "Camera orientation set to " + result);
+            mCamera.setDisplayOrientation(result); // 设置显示方向
+            showToast("Camera orientation set to " + result); // 显示相机方向
         }
     }
 
-    // 配置相机参数
-    private void configureCameraParameters() {
+    private void configureParameters() {
         if (mCamera != null) {
             Camera.Parameters params = mCamera.getParameters();
-            params.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
-            mCamera.setParameters(params);
-            showToast("Camera parameters set");
+            params.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE); // 设置自动对焦模式
+            mCamera.setParameters(params); // 应用参数
+            showToast("Camera parameters set"); // 配置参数成功
         } else {
-            showToast("Camera not opened yet");
+            showToast("Camera not opened yet"); // 相机未打开
         }
     }
 
-    // 启动相机预览
+    private boolean prepareSurfaceTexture() {
+        if (mCamera == null) {
+            showToast("Camera not opened");
+            return false;
+        }
+
+        SurfaceTexture surfaceTexture = mTextureView.getSurfaceTexture();
+        if (surfaceTexture == null) {
+            showToast("SurfaceTexture not ready");
+            return false;
+        }
+
+        try {
+            mCamera.setPreviewTexture(surfaceTexture); // 设置预览纹理
+            showToast("Surface prepared"); // 纹理准备完成
+            return true;
+        } catch (IOException e) {
+            showToast("Failed to prepare surface");
+            e.printStackTrace();
+            return false;
+        }
+    }
+
     private void startPreview() {
         if (mCamera == null) {
             showToast("Camera not opened");
             return;
         }
 
-        SurfaceTexture surfaceTexture = mTextureView.getSurfaceTexture();
-        if (surfaceTexture == null) {
-            showToast("SurfaceTexture not ready");
-            return;
-        }
-
-        try {
-            mCamera.setPreviewTexture(surfaceTexture);
-            mCamera.startPreview();
-            showToast("Preview started");
-        } catch (IOException e) {
-            showToast("Failed to start preview");
-            e.printStackTrace();
+        if (prepareSurfaceTexture()) { // 准备纹理
+            try {
+                mCamera.startPreview(); // 启动预览
+                showToast("Preview started"); // 预览启动成功
+            } catch (Exception e) {
+                showToast("Failed to start preview"); // 启动预览失败
+                e.printStackTrace();
+            }
         }
     }
 
-    // 拍照并保存图片到相册
     private void takePicture() {
         if (mCamera == null) {
             showToast("Camera not opened");
             return;
         }
 
+        long currentTime = System.currentTimeMillis(); // 获取当前时间戳
+        String fileName = "Photo_" + currentTime + ".jpg"; // 构造文件名
+
         ContentValues values = new ContentValues();
-        values.put(MediaStore.Images.Media.TITLE, "Photo_" + System.currentTimeMillis());
-        values.put(MediaStore.Images.Media.DESCRIPTION, "Captured by Camera API1");
-        values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
-        values.put(MediaStore.Images.Media.DATE_ADDED, System.currentTimeMillis());
-        Uri uri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+        values.put(MediaStore.Images.Media.TITLE, "Photo_" + currentTime); // 图片标题
+        values.put(MediaStore.Images.Media.DISPLAY_NAME, fileName);  // 显示的文件名
+        values.put(MediaStore.Images.Media.DESCRIPTION, "Captured by Camera API1"); // 图片描述
+        values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg"); // 图片类型
+        values.put(MediaStore.Images.Media.DATE_ADDED, System.currentTimeMillis()); // 图片添加时间
+        Uri uri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values); // 插入 MediaStore
 
         Camera.PictureCallback pictureCallback = (data, camera) -> {
             try {
-                OutputStream outputStream = getContentResolver().openOutputStream(uri);
-                outputStream.write(data);
+                OutputStream outputStream = getContentResolver().openOutputStream(uri); // 获取输出流
+                outputStream.write(data); // 写入数据
                 outputStream.close();
-                showToast("Photo saved to gallery: " + uri.toString());
-                mCamera.startPreview();
+                showToast("Photo saved to gallery: " + fileName); // 图片保存成功
+                mCamera.startPreview(); // 重启预览
             } catch (IOException e) {
                 e.printStackTrace();
-                showToast("Failed to save photo to gallery");
+                showToast("Failed to save photo to gallery"); // 保存失败
             }
         };
 
-        mCamera.takePicture(null, null, pictureCallback);
+        mCamera.takePicture(null, null, pictureCallback); // 拍照
     }
 
-    // 停止预览
     private void stopPreview() {
         if (mCamera != null) {
             try {
-                mCamera.stopPreview();
-                showToast("Preview stopped");
+                mCamera.stopPreview(); // 停止预览
+                showToast("Preview stopped"); // 预览停止
             } catch (Exception e) {
-                showToast("Preview not started or already stopped");
+                showToast("Preview not started or already stopped"); // 预览未启动或已停止
             }
         }
     }
 
-    // 释放相机资源
-    private void releaseCamera() {
+    private void closeCamera() {
         if (mCamera != null) {
-            mCamera.release();
+            mCamera.release(); // 释放相机资源
             mCamera = null;
-            showToast("Camera released");
+            showToast("Camera closed"); // 相机关闭
         }
     }
 
-    // 关闭相机
-    private void closeCamera() {
-        releaseCamera();
-    }
-
-    // 显示Toast消息
     private void showToast(String msg) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
-        Log.i(TAG, msg);
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        releaseCamera();
+        Log.i(TAG, msg); // 打印日志
     }
 }

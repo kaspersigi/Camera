@@ -3,10 +3,10 @@
     <string name="title">Camera Demo</string>
     <string name="button1">Request Permission</string>
     <string name="button2">Open Camera</string>
-    <string name="button3">Create Session</string>
-    <string name="button4">Start Preview</string>
-    <string name="button5">Take Picture</string>
-    <string name="button6">Stop Preview</string>
-    <string name="button7">Destroy Session</string>
+    <string name="button3">Set Display Orientation</string>
+    <string name="button4">Configure Parameters</string>
+    <string name="button5">Start Preview</string>
+    <string name="button6">Take Picture</string>
+    <string name="button7">Stop Preview</string>
     <string name="button8">Close Camera</string>
 </resources>
