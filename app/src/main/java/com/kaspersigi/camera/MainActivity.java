@@ -1,10 +1,11 @@
 package com.kaspersigi.camera;
 
+import android.graphics.SurfaceTexture;
+import android.hardware.Camera;
 import android.Manifest;
 import android.content.ContentValues;
 import android.content.pm.PackageManager;
-import android.graphics.SurfaceTexture;
-import android.hardware.Camera;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.MediaStore;
@@ -13,23 +14,20 @@ import android.view.Surface;
 import android.view.TextureView;
 import android.widget.Toast;
 
-import android.net.Uri; // <-- 这里添加 Uri 导入
-
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 
-@SuppressWarnings("deprecation") // 使用 Camera API1
+@SuppressWarnings("deprecation")
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "CameraDemo";
 
     private TextureView mTextureView;
     private Camera mCamera;
-    private int cameraId = Camera.CameraInfo.CAMERA_FACING_BACK; // 默认后摄像头
+    private int cameraId = Camera.CameraInfo.CAMERA_FACING_BACK;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -47,6 +45,7 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.button8).setOnClickListener(v -> closeCamera());
     }
 
+    // 请求相机权限
     private void requestCameraPermission() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                 == PackageManager.PERMISSION_GRANTED) {
@@ -56,10 +55,11 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // 打开相机
     private void openCamera() {
         if (mCamera == null) {
             try {
-                mCamera = Camera.open(cameraId); // 使用 cameraId 来打开不同的摄像头
+                mCamera = Camera.open(cameraId);
                 setCameraDisplayOrientation();
                 showToast("Camera opened");
             } catch (Exception e) {
@@ -71,6 +71,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // 设置相机显示方向
     private void setCameraDisplayOrientation() {
         Camera.CameraInfo info = new Camera.CameraInfo();
         Camera.getCameraInfo(cameraId, info);
@@ -99,6 +100,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // 配置相机参数
     private void configureCameraParameters() {
         if (mCamera != null) {
             Camera.Parameters params = mCamera.getParameters();
@@ -110,6 +112,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // 启动相机预览
     private void startPreview() {
         if (mCamera == null) {
             showToast("Camera not opened");
@@ -132,13 +135,13 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // 拍照并保存图片到相册
     private void takePicture() {
         if (mCamera == null) {
             showToast("Camera not opened");
             return;
         }
 
-        // 创建保存图片的文件
         ContentValues values = new ContentValues();
         values.put(MediaStore.Images.Media.TITLE, "Photo_" + System.currentTimeMillis());
         values.put(MediaStore.Images.Media.DESCRIPTION, "Captured by Camera API1");
@@ -148,13 +151,10 @@ public class MainActivity extends AppCompatActivity {
 
         Camera.PictureCallback pictureCallback = (data, camera) -> {
             try {
-                // 获取输出流并写入数据
                 OutputStream outputStream = getContentResolver().openOutputStream(uri);
                 outputStream.write(data);
                 outputStream.close();
                 showToast("Photo saved to gallery: " + uri.toString());
-
-                // 恢复预览
                 mCamera.startPreview();
             } catch (IOException e) {
                 e.printStackTrace();
@@ -162,10 +162,10 @@ public class MainActivity extends AppCompatActivity {
             }
         };
 
-        // 拍照并调用回调
         mCamera.takePicture(null, null, pictureCallback);
     }
 
+    // 停止预览
     private void stopPreview() {
         if (mCamera != null) {
             try {
@@ -177,6 +177,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // 释放相机资源
     private void releaseCamera() {
         if (mCamera != null) {
             mCamera.release();
@@ -185,10 +186,12 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // 关闭相机
     private void closeCamera() {
-        releaseCamera(); // 和 release 同义
+        releaseCamera();
     }
 
+    // 显示Toast消息
     private void showToast(String msg) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
         Log.i(TAG, msg);
