@@ -25,7 +25,8 @@ import java.io.OutputStream;
 @SuppressWarnings("deprecation")
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "CameraDemo";
-    private static final int CAMERA_PERMISSION_REQUEST_CODE = 100; // 请求相机权限的常量
+    private static final int CAMERA_PERMISSION_REQUEST_CODE = 100;
+    private static final int STORAGE_PERMISSION_REQUEST_CODE = 101;
     private TextureView mTextureView;
     private Camera mCamera;
     private int mCameraId = Camera.CameraInfo.CAMERA_FACING_BACK; // 设置为后置摄像头
@@ -53,6 +54,20 @@ public class MainActivity extends AppCompatActivity {
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST_CODE); // 请求权限
         }
+
+        // 请求存储权限
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+                    == PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                            == PackageManager.PERMISSION_GRANTED) {
+                showToast("Storage permission granted"); // 存储权限已授权
+            } else {
+                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.READ_EXTERNAL_STORAGE,
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE}, STORAGE_PERMISSION_REQUEST_CODE); // 请求权限
+            }
+        }
+
     }
 
     @SuppressLint("DefaultLocale")
@@ -105,12 +120,21 @@ public class MainActivity extends AppCompatActivity {
 
     private void configureParameters() {
         if (mCamera != null) {
-            Camera.Parameters params = mCamera.getParameters();
-            params.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE); // 设置自动对焦模式
-            mCamera.setParameters(params); // 应用参数
-            showToast("Camera parameters set"); // 配置参数成功
+            try {
+                Camera.Parameters params = mCamera.getParameters();
+
+                // 检查设备是否支持自动对焦
+                if (params.getSupportedFocusModes().contains(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE)) {
+                    params.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
+                }
+                mCamera.setParameters(params); // 应用参数
+                showToast("Camera parameters set");
+            } catch (Exception e) {
+                Log.e(TAG, "Error configuring camera parameters", e);
+                showToast("Error configuring camera parameters");
+            }
         } else {
-            showToast("Camera not opened yet"); // 相机未打开
+            showToast("Camera not opened yet");
         }
     }
 
