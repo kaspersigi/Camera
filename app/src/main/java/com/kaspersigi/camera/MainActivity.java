@@ -21,6 +21,7 @@ import androidx.core.content.ContextCompat;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.List;
 
 @SuppressWarnings("deprecation") // Camera API1 已废弃，但很多老设备仍可用
 public class MainActivity extends AppCompatActivity {
@@ -36,6 +37,10 @@ public class MainActivity extends AppCompatActivity {
     private Camera mCamera;                // 相机句柄（API1）
     private int mCameraId = Camera.CameraInfo.CAMERA_FACING_BACK; // 选用后置摄像头
 
+    // —— 我们挑选出来的尺寸（都优先 4:3，选最大的；否则选最大可用）—
+    private Camera.Size mPreviewSize;
+    private Camera.Size mPictureSize;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -47,21 +52,18 @@ public class MainActivity extends AppCompatActivity {
         mSurfaceHolder.addCallback(new SurfaceHolder.Callback() {
             @Override
             public void surfaceCreated(SurfaceHolder holder) {
-                // 预览面创建完成，可以绑定到 camera 了（但通常先 openCamera 再绑定）
                 mSurfaceReady = true;
                 Log.d(TAG, "SurfaceView surfaceCreated");
             }
 
             @Override
             public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-                // 预览面大小/像素格式变化（如旋转/拉伸）
-                // API1 如果需要根据新尺寸重设 PreviewSize，可在这里 stopPreview -> setParameters -> startPreview
+                // 如果你想根据 UI 尺寸动态重选 PreviewSize，可以在这里 stopPreview -> configureParameters -> startPreview
                 Log.d(TAG, "SurfaceView surfaceChanged: " + width + "x" + height);
             }
 
             @Override
             public void surfaceDestroyed(SurfaceHolder holder) {
-                // 预览面被销毁，避免继续向无效 Surface 送帧
                 mSurfaceReady = false;
                 Log.d(TAG, "SurfaceView surfaceDestroyed");
             }
@@ -71,7 +73,7 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.button1).setOnClickListener(v -> requestCameraPermission());  // 请求相机/存储权限
         findViewById(R.id.button2).setOnClickListener(v -> openCamera());               // 打开相机
         findViewById(R.id.button3).setOnClickListener(v -> setDisplayOrientation());    // 设置显示方向（与设备旋转对齐）
-        findViewById(R.id.button4).setOnClickListener(v -> configureParameters());      // 配置相机参数（如对焦模式）
+        findViewById(R.id.button4).setOnClickListener(v -> configureParameters());      // 选择尺寸 + 配置参数（如对焦）
         findViewById(R.id.button5).setOnClickListener(v -> startPreview());             // 开始预览
         findViewById(R.id.button6).setOnClickListener(v -> takePicture());              // 拍照
         findViewById(R.id.button7).setOnClickListener(v -> stopPreview());              // 停止预览
@@ -107,7 +109,6 @@ public class MainActivity extends AppCompatActivity {
     private void openCamera() {
         if (mCamera == null) {
             try {
-                // 注意：某些机型 Camera.open 可能抛异常（被占用/无权限），须捕获
                 mCamera = Camera.open(mCameraId);
                 showToast(String.format("Camera: %d opened successfully", mCameraId));
             } catch (Exception e) {
@@ -129,7 +130,6 @@ public class MainActivity extends AppCompatActivity {
         Camera.CameraInfo info = new Camera.CameraInfo();
         Camera.getCameraInfo(mCameraId, info);
 
-        // 当前屏幕旋转角
         int rotation = getWindowManager().getDefaultDisplay().getRotation();
         int degrees = 0;
         switch (rotation) {
@@ -139,46 +139,55 @@ public class MainActivity extends AppCompatActivity {
             case Surface.ROTATION_270: degrees = 270; break;
         }
 
-        // 计算应设置的预览方向
         int result;
         if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-            // 前置相机需额外做镜像补偿
             result = (info.orientation + degrees) % 360;
-            result = (360 - result) % 360;
+            result = (360 - result) % 360; // 镜像补偿
         } else {
-            // 后置相机：传感器方向 - 屏幕旋转
             result = (info.orientation - degrees + 360) % 360;
         }
 
-        // 真正应用到预览
         mCamera.setDisplayOrientation(result);
         showToast("Camera orientation set to " + result);
     }
 
-    // —— 步骤4：配置相机参数（示例仅设置连续对焦；可扩展分辨率/白平衡/曝光等）—
+    // —— 步骤4：配置相机参数（选最大 4:3 的 Picture/Preview 尺寸 + 对焦等）—
     private void configureParameters() {
-        if (mCamera != null) {
-            try {
-                Camera.Parameters params = mCamera.getParameters();
-
-                // 连续对焦（拍照场景常用）；需先判断支持性
-                if (params.getSupportedFocusModes().contains(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE)) {
-                    params.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
-                }
-
-                // 工程上建议：根据 SurfaceView 宽高比匹配 PreviewSize / PictureSize（4:3/16:9等）
-                // List<Camera.Size> previewSizes = params.getSupportedPreviewSizes();
-                // List<Camera.Size> pictureSizes = params.getSupportedPictureSizes();
-                // -> 选择一个与 UI 比例接近且设备支持的尺寸再 setParameters
-
-                mCamera.setParameters(params);
-                showToast("Camera parameters set");
-            } catch (Exception e) {
-                Log.e(TAG, "Error configuring camera parameters", e);
-                showToast("Error configuring camera parameters");
-            }
-        } else {
+        if (mCamera == null) {
             showToast("Camera not opened yet");
+            return;
+        }
+
+        try {
+            Camera.Parameters params = mCamera.getParameters();
+
+            // 1) 选择“最大 4:3”的拍照尺寸（若无 4:3 则取最大可用）
+            mPictureSize = chooseLargest43OrMax(params.getSupportedPictureSizes());
+            Log.i(TAG, "Chosen PictureSize = " + mPictureSize.width + "x" + mPictureSize.height);
+
+            // 2) 选择“最大 4:3”的预览尺寸（若无 4:3 则取最大可用）
+            mPreviewSize = chooseLargest43OrMax(params.getSupportedPreviewSizes());
+            Log.i(TAG, "Chosen PreviewSize = " + mPreviewSize.width + "x" + mPreviewSize.height);
+
+            // 3) 应用尺寸
+            // ⚠️ 某些机型要求先 stopPreview 再 setParameters，否则可能失败或黑屏
+            try { mCamera.stopPreview(); } catch (Exception ignore) {}
+            params.setPictureSize(mPictureSize.width, mPictureSize.height);
+            params.setPreviewSize(mPreviewSize.width, mPreviewSize.height);
+
+            // 4) 对焦模式（示例：连续对焦）
+            List<String> fModes = params.getSupportedFocusModes();
+            if (fModes != null && fModes.contains(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE)) {
+                params.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
+            }
+
+            // 5) 应用参数
+            mCamera.setParameters(params);
+            showToast("Camera parameters set");
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error configuring camera parameters", e);
+            showToast("Error configuring camera parameters");
         }
     }
 
@@ -189,7 +198,6 @@ public class MainActivity extends AppCompatActivity {
             return false;
         }
         if (!mSurfaceReady || mSurfaceHolder == null) {
-            // Surface 可能还在创建中；需等 surfaceCreated 后再试
             showToast("SurfaceView not ready");
             return false;
         }
@@ -225,6 +233,15 @@ public class MainActivity extends AppCompatActivity {
         if (mCamera == null) {
             showToast("Camera not opened");
             return;
+        }
+
+        // 每次拍前设置 JPEG 旋转（保证保存的照片方向正确）
+        try {
+            Camera.Parameters p = mCamera.getParameters();
+            p.setRotation(getJpegRotation()); // 0/90/180/270
+            mCamera.setParameters(p);
+        } catch (Exception e) {
+            Log.w(TAG, "set jpeg rotation failed", e);
         }
 
         long currentTime = System.currentTimeMillis();
@@ -267,7 +284,6 @@ public class MainActivity extends AppCompatActivity {
                 mCamera.stopPreview();
                 showToast("Preview stopped");
             } catch (Exception e) {
-                // 若未在预览中调用 stopPreview 会抛异常，这里吞掉并提示
                 showToast("Preview not started or already stopped");
             }
         }
@@ -276,12 +292,56 @@ public class MainActivity extends AppCompatActivity {
     // —— 步骤8：关闭相机（释放硬件资源；下次需重新 open）—
     private void closeCamera() {
         if (mCamera != null) {
-            try {
-                mCamera.stopPreview(); // 先尝试停预览，避免某些机型报错
-            } catch (Exception ignore) {}
-            mCamera.release(); // 释放设备
+            try { mCamera.stopPreview(); } catch (Exception ignore) {}
+            mCamera.release();
             mCamera = null;
             showToast("Camera closed");
+        }
+    }
+
+    // —— 工具：选择“最大 4:3”，若无 4:3 则选择最大可用 —
+    private Camera.Size chooseLargest43OrMax(List<Camera.Size> sizes) {
+        if (sizes == null || sizes.isEmpty()) return null;
+
+        Camera.Size best43 = null;
+        Camera.Size bestAny = sizes.get(0);
+
+        for (Camera.Size s : sizes) {
+            long pixels = (long) s.width * (long) s.height;
+            if ((long) bestAny.width * bestAny.height < pixels) {
+                bestAny = s;
+            }
+            // 4:3 判断（避免浮点误差）
+            if ((long) s.width * 3 == (long) s.height * 4) {
+                if (best43 == null ||
+                        (long) best43.width * best43.height < pixels) {
+                    best43 = s;
+                }
+            }
+        }
+        return (best43 != null) ? best43 : bestAny;
+    }
+
+    // —— 工具：计算 JPEG 旋转角（保存的照片方向）—
+    private int getJpegRotation() {
+        Camera.CameraInfo info = new Camera.CameraInfo();
+        Camera.getCameraInfo(mCameraId, info);
+
+        int rotation = getWindowManager().getDefaultDisplay().getRotation();
+        int degrees = 0;
+        switch (rotation) {
+            case Surface.ROTATION_0:   degrees = 0;   break;
+            case Surface.ROTATION_90:  degrees = 90;  break;
+            case Surface.ROTATION_180: degrees = 180; break;
+            case Surface.ROTATION_270: degrees = 270; break;
+        }
+
+        if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+            // API1 官方建议：前置 JPEG 旋转为 (orientation + degrees) % 360
+            return (info.orientation + degrees) % 360;
+        } else {
+            // 后置 JPEG 旋转为 (orientation - degrees + 360) % 360
+            return (info.orientation - degrees + 360) % 360;
         }
     }
 
