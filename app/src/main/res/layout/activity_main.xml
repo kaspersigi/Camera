@@ -2,12 +2,13 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- 相机预览：最底层 -->
-    <TextureView
-        android:id="@+id/textureView"
+    <!-- 相机预览：SurfaceView 在最底层 -->
+    <SurfaceView
+        android:id="@+id/surfaceView"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- 你的原有按钮层，保持不变 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
